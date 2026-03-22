@@ -281,26 +281,52 @@ function draw3D(W, D) {
 
   const H = W / 2;
   const maxDim = Math.max(W, D, H);
-  const sc = Math.min(cw, ch) * 0.35 / maxDim;
+  const sc = Math.min(cw, ch) * 0.32 / maxDim;
 
-  // isometric projection angles
-  const ax = Math.PI / 6, ay = -Math.PI / 4.5;
-  const cx0 = cw * 0.50, cy0 = ch * 0.55;
+  // match Python matplotlib view_init(elev=24, azim=-52)
+  const azim = -52 * Math.PI / 180;
+  const elev = 24 * Math.PI / 180;
+  const cx0 = cw * 0.48, cy0 = ch * 0.55;
 
   function proj(x, y, z) {
-    const px = cx0 + (x * Math.cos(ay) - y * Math.cos(ax)) * sc;
-    const py = cy0 - (x * Math.sin(ay) + y * Math.sin(ax) + z) * sc;
+    // rotate around Z by azimuth, then project with elevation
+    const xr =  x * Math.cos(azim) + y * Math.sin(azim);
+    const yr = -x * Math.sin(azim) + y * Math.cos(azim);
+    const px = cx0 + yr * sc;
+    const py = cy0 - (xr * Math.sin(elev) + z * Math.cos(elev)) * sc;
     return [px, py];
   }
 
-  const N = 100;
+  const N = 120;
   const s = [];
   for (let i = 0; i < N; i++) s.push(-1 + (2 * i) / (N - 1));
   const xp = s.map(si => D * (1 - si * si));
   const yp = s.map(si => (W / 2) * si);
 
-  // side wall fill (translucent)
-  ctx.fillStyle = 'rgba(0,212,255,0.06)';
+  // --- draw back-to-front for correct layering ---
+
+  // bottom parabola edge (dashed, behind everything)
+  ctx.strokeStyle = CYAN; ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 0.8; ctx.globalAlpha = 0.25;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const [px, py] = proj(xp[i], yp[i], 0);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // bottom front edge (dashed)
+  ctx.strokeStyle = CYAN; ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 0.8; ctx.globalAlpha = 0.25;
+  ctx.beginPath();
+  let [bfl, bflt] = proj(0, -W/2, 0);
+  let [bfr, bfrt] = proj(0, W/2, 0);
+  ctx.moveTo(bfl, bflt); ctx.lineTo(bfr, bfrt); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // side wall surface (translucent curtain from z=0 to z=H along parabola)
+  ctx.fillStyle = 'rgba(0,212,255,0.07)';
   ctx.beginPath();
   for (let i = 0; i < N; i++) {
     const [px, py] = proj(xp[i], yp[i], 0);
@@ -312,31 +338,33 @@ function draw3D(W, D) {
   }
   ctx.closePath(); ctx.fill();
 
-  // top face fill
-  ctx.fillStyle = 'rgba(0,212,255,0.12)';
+  // top face surface
+  ctx.fillStyle = 'rgba(0,212,255,0.14)';
   ctx.beginPath();
+  // parabola at z=H
   for (let i = 0; i < N; i++) {
     const [px, py] = proj(xp[i], yp[i], H);
     i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
-  const [cp1] = [proj(0, W / 2, H)];
-  ctx.lineTo(cp1[0], cp1[1]);
-  const [cp2] = [proj(0, -W / 2, H)];
-  ctx.lineTo(cp2[0], cp2[1]);
+  // close along front opening edge at z=H
+  const [fe1x, fe1y] = proj(0, W/2, H);
+  ctx.lineTo(fe1x, fe1y);
+  const [fe2x, fe2y] = proj(0, -W/2, H);
+  ctx.lineTo(fe2x, fe2y);
   ctx.closePath(); ctx.fill();
 
-  // front opening face
-  ctx.fillStyle = 'rgba(68,136,255,0.15)';
+  // front opening face (rectangle at x=0)
+  ctx.fillStyle = 'rgba(68,136,255,0.18)';
   ctx.beginPath();
-  const corners = [[0, -W/2, 0], [0, W/2, 0], [0, W/2, H], [0, -W/2, H]];
-  corners.forEach((c, i) => {
-    const [px, py] = proj(...c);
+  const fCorners = [[0,-W/2,0],[0,W/2,0],[0,W/2,H],[0,-W/2,H]];
+  fCorners.forEach((pt, i) => {
+    const [px, py] = proj(...pt);
     i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   });
   ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 1.2; ctx.stroke();
 
-  // parabola edge at top
+  // top parabola edge (solid)
   ctx.strokeStyle = CYAN; ctx.lineWidth = 1.8;
   ctx.beginPath();
   for (let i = 0; i < N; i++) {
@@ -345,48 +373,40 @@ function draw3D(W, D) {
   }
   ctx.stroke();
 
-  // parabola edge at bottom (dashed)
-  ctx.setLineDash([4, 4]); ctx.lineWidth = 0.8; ctx.globalAlpha = 0.3;
-  ctx.beginPath();
-  for (let i = 0; i < N; i++) {
-    const [px, py] = proj(xp[i], yp[i], 0);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
-
   // front opening top edge
   ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
   ctx.beginPath();
-  let [p1x, p1y] = proj(0, -W/2, H);
-  let [p2x, p2y] = proj(0, W/2, H);
-  ctx.moveTo(p1x, p1y); ctx.lineTo(p2x, p2y); ctx.stroke();
+  const [t1x, t1y] = proj(0, -W/2, H);
+  const [t2x, t2y] = proj(0, W/2, H);
+  ctx.moveTo(t1x, t1y); ctx.lineTo(t2x, t2y); ctx.stroke();
 
-  // vertical edges at front
+  // vertical edges at front corners
   ctx.lineWidth = 1.5;
   for (const yw of [-W/2, W/2]) {
     ctx.beginPath();
-    const [a, b] = proj(0, yw, 0);
-    const [c, d] = proj(0, yw, H);
-    ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke();
+    const [ax, ay] = proj(0, yw, 0);
+    const [bx, by] = proj(0, yw, H);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
   }
 
-  // back vertical edge
-  ctx.lineWidth = 1.2; ctx.globalAlpha = 0.45;
+  // back vertical edge (tip of parabola)
+  ctx.lineWidth = 1.2; ctx.globalAlpha = 0.5;
   ctx.beginPath();
-  const [bx1, by1] = proj(D, 0, 0);
-  const [bx2, by2] = proj(D, 0, H);
-  ctx.moveTo(bx1, by1); ctx.lineTo(bx2, by2); ctx.stroke();
+  const [v1x, v1y] = proj(D, 0, 0);
+  const [v2x, v2y] = proj(D, 0, H);
+  ctx.moveTo(v1x, v1y); ctx.lineTo(v2x, v2y); ctx.stroke();
   ctx.globalAlpha = 1;
 
   // dimension labels
-  ctx.fillStyle = GOLD; ctx.font = '12px Courier New'; ctx.textAlign = 'left';
-  const [lw] = [proj(D / 2, W / 2 + 15, H + 5)];
-  ctx.fillText(`W=${W.toFixed(0)}mm`, lw[0], lw[1]);
-  const [lh] = [proj(D + 8, 0, H / 2)];
-  ctx.fillText(`H=${H.toFixed(0)}mm`, lh[0], lh[1]);
-  const [ld] = [proj(D / 2, -W / 2 - 15, -5)];
-  ctx.fillText(`D=${D.toFixed(0)}mm`, ld[0], ld[1]);
+  ctx.fillStyle = GOLD; ctx.font = '12px Courier New';
+  ctx.textAlign = 'left';
+  const lwP = proj(D * 0.35, W / 2 + 12, H + 3);
+  ctx.fillText(`W=${W.toFixed(0)}mm`, lwP[0], lwP[1]);
+  const lhP = proj(D + 6, 3, H / 2);
+  ctx.fillText(`H=${H.toFixed(0)}mm`, lhP[0], lhP[1]);
+  ctx.textAlign = 'right';
+  const ldP = proj(D * 0.55, -W / 2 - 12, -3);
+  ctx.fillText(`D=${D.toFixed(0)}mm`, ldP[0], ldP[1]);
 }
 
 // ─── Piece A (top face) ─────────────────────────────────────────────────────
