@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parabolic Air Outlet Generator</title>
+<style>
+  :root {
+    --bg: #0d0d12;
+    --bg2: #1a1a26;
+    --cyan: #00d4ff;
+    --gold: #ffc72c;
+    --orange: #ff6b35;
+    --green: #39ff14;
+    --white: #e8e8e8;
+    --muted: #888;
+    --dim: #555;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 1.1rem;
+    color: var(--white);
+    border: 1px solid var(--cyan);
+    background: var(--bg2);
+    padding: 8px 20px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .controls {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 16px;
+    background: var(--bg2);
+    padding: 12px 24px;
+    border-radius: 8px;
+    border: 1px solid #2a2a3a;
+  }
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .control-group label {
+    color: var(--gold);
+    font-size: 0.85rem;
+  }
+  .control-group input[type=range] {
+    width: 140px;
+    accent-color: var(--cyan);
+  }
+  .control-group .val {
+    color: var(--cyan);
+    min-width: 60px;
+    font-size: 0.85rem;
+  }
+  .info-bar {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 12px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .info-bar span { color: var(--gold); }
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 12px;
+    max-width: 1100px;
+    width: 100%;
+  }
+  .panel {
+    background: var(--bg);
+    border: 1px solid #2a2a3a;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .panel-title {
+    background: var(--bg2);
+    color: var(--muted);
+    font-size: 0.78rem;
+    padding: 6px 12px;
+    border-bottom: 1px solid #2a2a3a;
+    text-align: center;
+  }
+  .panel canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .panel-b {
+    grid-column: 1 / -1;
+  }
+  .legend {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    font-size: 0.75rem;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .legend-swatch {
+    width: 14px; height: 10px;
+    border-radius: 2px;
+  }
+  .assembly {
+    margin-top: 10px;
+    font-size: 0.72rem;
+    color: #666;
+    text-align: center;
+    background: var(--bg2);
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #2a2a2a;
+    max-width: 1100px;
+  }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .btn {
+    background: var(--bg2);
+    color: var(--cyan);
+    border: 1px solid var(--cyan);
+    padding: 6px 16px;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: #222240; }
+</style>
+</head>
+<body>
+
+<h1>PARABOLIC AIR OUTLET GENERATOR</h1>
+
+<div class="controls">
+  <div class="control-group">
+    <label>Width (W):</label>
+    <input type="range" id="widthSlider" min="30" max="200" value="80" step="1">
+    <div class="val" id="widthVal">80 mm</div>
+  </div>
+  <div class="control-group">
+    <label>Depth (D):</label>
+    <input type="range" id="depthSlider" min="30" max="250" value="100" step="1">
+    <div class="val" id="depthVal">100 mm</div>
+  </div>
+</div>
+
+<div class="info-bar" id="infoBar"></div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-title">3D VIEW</div>
+    <canvas id="canvas3d" width="540" height="420"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-title" id="titleA">PIECE A -- TOP FACE | Cut 1x from 1mm PET</div>
+    <canvas id="canvasA" width="540" height="420"></canvas>
+  </div>
+  <div class="panel panel-b">
+    <div class="panel-title" id="titleB">PIECE B -- SIDE WALL STRIP</div>
+    <canvas id="canvasB" width="1092" height="260"></canvas>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#00d4ff"></div> cut line</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#39ff14"></div> opening edge</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#ff6b35"></div> fold reference</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#ffc72c"></div> dimension</div>
+</div>
+
+<div class="assembly">
+  [1] Cut A and B. &nbsp;
+  [2] Bend strip B at center mark into a U-shape (both walls, one piece). &nbsp;
+  [3] Attach B top edge to curved edges of A (solvent cement or tape). &nbsp;
+  [4] Green edges = opening -- mount flush on surface.
+</div>
+
+<div class="btn-row">
+  <button class="btn" onclick="downloadSVG('A')">Download Piece A (SVG)</button>
+  <button class="btn" onclick="downloadSVG('B')">Download Piece B (SVG)</button>
+  <button class="btn" onclick="downloadSVG('AB')">Download Both (SVG)</button>
+</div>
+
+<script>
+// ─── Colours ────────────────────────────────────────────────────────────────
+const BG = '#0d0d12', CYAN = '#00d4ff', GOLD = '#ffc72c',
+      ORANGE = '#ff6b35', GREEN = '#39ff14', WHITE = '#e8e8e8';
+
+// ─── Geometry ───────────────────────────────────────────────────────────────
+function computeGeometry(W, D, N = 400) {
+  const H = W / 2;
+  const s = [], xp = [], yp = [];
+  for (let i = 0; i < N; i++) {
+    const si = -1 + (2 * i) / (N - 1);
+    s.push(si);
+    xp.push(D * (1 - si * si));
+    yp.push((W / 2) * si);
+  }
+  // arc length via trapezoidal rule on ds
+  let arcTotal = 0;
+  const ds = 2 / (N - 1);
+  for (let i = 1; i < N; i++) {
+    const dx = xp[i] - xp[i - 1];
+    const dy = yp[i] - yp[i - 1];
+    arcTotal += Math.sqrt(dx * dx + dy * dy);
+  }
+  return { H, s, xp, yp, arcTotal };
+}
+
+// ─── Drawing helpers ────────────────────────────────────────────────────────
+function dimH(ctx, x1, x2, y, label, scale, ox, oy) {
+  const sx1 = ox + x1 * scale, sx2 = ox + x2 * scale, sy = oy - y * scale;
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(sx1, sy); ctx.lineTo(sx2, sy); ctx.stroke();
+  // arrows
+  for (const [px, dir] of [[sx1, 1], [sx2, -1]]) {
+    ctx.beginPath();
+    ctx.moveTo(px, sy);
+    ctx.lineTo(px + dir * 6, sy - 3);
+    ctx.lineTo(px + dir * 6, sy + 3);
+    ctx.fill();
+  }
+  ctx.fillStyle = GOLD; ctx.font = '11px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText(label, (sx1 + sx2) / 2, sy - 6);
+}
+
+function dimV(ctx, y1, y2, x, label, scale, ox, oy) {
+  const sx = ox + x * scale, sy1 = oy - y1 * scale, sy2 = oy - y2 * scale;
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(sx, sy1); ctx.lineTo(sx, sy2); ctx.stroke();
+  for (const [py, dir] of [[sy1, 1], [sy2, -1]]) {
+    ctx.beginPath();
+    ctx.moveTo(sx, py);
+    ctx.lineTo(sx - 3, py + dir * 6);
+    ctx.lineTo(sx + 3, py + dir * 6);
+    ctx.fill();
+  }
+  ctx.save();
+  ctx.translate(sx + 14, (sy1 + sy2) / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = GOLD; ctx.font = '11px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText(label, 0, 0);
+  ctx.restore();
+}
+
+// ─── 3D isometric view ──────────────────────────────────────────────────────
+function draw3D(W, D) {
+  const c = document.getElementById('canvas3d');
+  const ctx = c.getContext('2d');
+  const cw = c.width, ch = c.height;
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
+
+  const H = W / 2;
+  const maxDim = Math.max(W, D, H);
+  const sc = Math.min(cw, ch) * 0.35 / maxDim;
+
+  // isometric projection angles
+  const ax = Math.PI / 6, ay = -Math.PI / 4.5;
+  const cx0 = cw * 0.50, cy0 = ch * 0.55;
+
+  function proj(x, y, z) {
+    const px = cx0 + (x * Math.cos(ay) - y * Math.cos(ax)) * sc;
+    const py = cy0 - (x * Math.sin(ay) + y * Math.sin(ax) + z) * sc;
+    return [px, py];
+  }
+
+  const N = 100;
+  const s = [];
+  for (let i = 0; i < N; i++) s.push(-1 + (2 * i) / (N - 1));
+  const xp = s.map(si => D * (1 - si * si));
+  const yp = s.map(si => (W / 2) * si);
+
+  // side wall fill (translucent)
+  ctx.fillStyle = 'rgba(0,212,255,0.06)';
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const [px, py] = proj(xp[i], yp[i], 0);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  for (let i = N - 1; i >= 0; i--) {
+    const [px, py] = proj(xp[i], yp[i], H);
+    ctx.lineTo(px, py);
+  }
+  ctx.closePath(); ctx.fill();
+
+  // top face fill
+  ctx.fillStyle = 'rgba(0,212,255,0.12)';
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const [px, py] = proj(xp[i], yp[i], H);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  const [cp1] = [proj(0, W / 2, H)];
+  ctx.lineTo(cp1[0], cp1[1]);
+  const [cp2] = [proj(0, -W / 2, H)];
+  ctx.lineTo(cp2[0], cp2[1]);
+  ctx.closePath(); ctx.fill();
+
+  // front opening face
+  ctx.fillStyle = 'rgba(68,136,255,0.15)';
+  ctx.beginPath();
+  const corners = [[0, -W/2, 0], [0, W/2, 0], [0, W/2, H], [0, -W/2, H]];
+  corners.forEach((c, i) => {
+    const [px, py] = proj(...c);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  });
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 1; ctx.stroke();
+
+  // parabola edge at top
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const [px, py] = proj(xp[i], yp[i], H);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // parabola edge at bottom (dashed)
+  ctx.setLineDash([4, 4]); ctx.lineWidth = 0.8; ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const [px, py] = proj(xp[i], yp[i], 0);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // front opening top edge
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+  ctx.beginPath();
+  let [p1x, p1y] = proj(0, -W/2, H);
+  let [p2x, p2y] = proj(0, W/2, H);
+  ctx.moveTo(p1x, p1y); ctx.lineTo(p2x, p2y); ctx.stroke();
+
+  // vertical edges at front
+  ctx.lineWidth = 1.5;
+  for (const yw of [-W/2, W/2]) {
+    ctx.beginPath();
+    const [a, b] = proj(0, yw, 0);
+    const [c, d] = proj(0, yw, H);
+    ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke();
+  }
+
+  // back vertical edge
+  ctx.lineWidth = 1.2; ctx.globalAlpha = 0.45;
+  ctx.beginPath();
+  const [bx1, by1] = proj(D, 0, 0);
+  const [bx2, by2] = proj(D, 0, H);
+  ctx.moveTo(bx1, by1); ctx.lineTo(bx2, by2); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // dimension labels
+  ctx.fillStyle = GOLD; ctx.font = '12px Courier New'; ctx.textAlign = 'left';
+  const [lw] = [proj(D / 2, W / 2 + 15, H + 5)];
+  ctx.fillText(`W=${W.toFixed(0)}mm`, lw[0], lw[1]);
+  const [lh] = [proj(D + 8, 0, H / 2)];
+  ctx.fillText(`H=${H.toFixed(0)}mm`, lh[0], lh[1]);
+  const [ld] = [proj(D / 2, -W / 2 - 15, -5)];
+  ctx.fillText(`D=${D.toFixed(0)}mm`, ld[0], ld[1]);
+}
+
+// ─── Piece A (top face) ─────────────────────────────────────────────────────
+function drawPieceA(W, D) {
+  const c = document.getElementById('canvasA');
+  const ctx = c.getContext('2d');
+  const cw = c.width, ch = c.height;
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
+
+  const margin = 50;
+  const scale = Math.min((cw - 2 * margin) / (D + 40), (ch - 2 * margin) / (W + 40));
+  const ox = margin;
+  const oy = ch / 2 + (0) * scale;
+
+  const N = 200;
+  // build outline: closing line at x=0 + parabola
+  const pts = [];
+  // parabola from s=-1 to s=1
+  for (let i = 0; i < N; i++) {
+    const si = -1 + (2 * i) / (N - 1);
+    pts.push([D * (1 - si * si), (W / 2) * si]);
+  }
+
+  // grid lines
+  ctx.strokeStyle = WHITE; ctx.globalAlpha = 0.06; ctx.lineWidth = 0.5;
+  for (let xg = 10; xg < D; xg += 10) {
+    const yMax = (W / 2) * Math.sqrt(Math.max(0, 1 - xg / D));
+    ctx.beginPath();
+    ctx.moveTo(ox + xg * scale, oy - (-yMax) * scale);
+    ctx.lineTo(ox + xg * scale, oy - yMax * scale);
+    ctx.stroke();
+  }
+  for (let yg = -W / 2 + 10; yg < W / 2; yg += 10) {
+    const xEdge = D * (1 - Math.pow(yg / (W / 2), 2));
+    ctx.beginPath();
+    ctx.moveTo(ox, oy - yg * scale);
+    ctx.lineTo(ox + xEdge * scale, oy - yg * scale);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // fill
+  ctx.fillStyle = 'rgba(0,212,255,0.10)';
+  ctx.beginPath();
+  ctx.moveTo(ox, oy - (-W / 2) * scale);
+  for (const [x, y] of pts) {
+    ctx.lineTo(ox + x * scale, oy - y * scale);
+  }
+  ctx.lineTo(ox, oy - (W / 2) * scale);
+  ctx.closePath(); ctx.fill();
+
+  // outline
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy - (-W / 2) * scale);
+  for (const [x, y] of pts) {
+    ctx.lineTo(ox + x * scale, oy - y * scale);
+  }
+  ctx.lineTo(ox, oy - (W / 2) * scale);
+  ctx.closePath(); ctx.stroke();
+
+  // opening edge (green)
+  ctx.strokeStyle = GREEN; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy - (-W / 2) * scale);
+  ctx.lineTo(ox, oy - (W / 2) * scale);
+  ctx.stroke();
+
+  // labels
+  ctx.fillStyle = 'rgba(0,212,255,0.15)'; ctx.font = 'bold 36px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('A', ox + D * 0.42 * scale, oy + 12);
+  ctx.fillStyle = '#777'; ctx.font = 'italic 11px Courier New';
+  ctx.fillText('TOP FACE', ox + D * 0.20 * scale, oy - 2);
+  ctx.fillStyle = '#555'; ctx.font = '10px Courier New';
+  ctx.fillText('flat -- no bending', ox + D * 0.20 * scale, oy + 14);
+
+  ctx.fillStyle = GREEN; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
+  ctx.fillText('opening', ox - 6, oy - 4);
+  ctx.fillText('edge', ox - 6, oy + 10);
+
+  // dimensions
+  dimH(ctx, 0, D, -W / 2 - 14, `D = ${D.toFixed(0)} mm`, scale, ox, oy);
+  dimV(ctx, -W / 2, W / 2, D + 16, `W = ${W.toFixed(0)} mm`, scale, ox, oy);
+}
+
+// ─── Piece B (side wall strip) ──────────────────────────────────────────────
+function drawPieceB(W, D) {
+  const c = document.getElementById('canvasB');
+  const ctx = c.getContext('2d');
+  const cw = c.width, ch = c.height;
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
+
+  const { H, arcTotal } = computeGeometry(W, D);
+  const arcHalf = arcTotal / 2;
+
+  const margin = 50;
+  const scale = Math.min((cw - 2 * margin) / (arcTotal * 1.15), (ch - 2 * margin) / (H * 2));
+  const ox = margin + arcTotal * 0.05 * scale;
+  const oy = ch / 2 + H / 2 * scale + 10;
+
+  // rectangle fill
+  ctx.fillStyle = 'rgba(0,212,255,0.08)';
+  ctx.fillRect(ox, oy - H * scale, arcTotal * scale, H * scale);
+
+  // rectangle outline
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+  ctx.strokeRect(ox, oy - H * scale, arcTotal * scale, H * scale);
+
+  // fold reference (dashed orange)
+  const foldX = ox + arcHalf * scale;
+  ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(foldX, oy); ctx.lineTo(foldX, oy - H * scale);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // fold arrows
+  ctx.fillStyle = ORANGE;
+  // top arrow (down)
+  ctx.beginPath(); ctx.moveTo(foldX, oy - H * scale);
+  ctx.lineTo(foldX - 4, oy - H * scale - 8); ctx.lineTo(foldX + 4, oy - H * scale - 8);
+  ctx.closePath(); ctx.fill();
+  // bottom arrow (up)
+  ctx.beginPath(); ctx.moveTo(foldX, oy);
+  ctx.lineTo(foldX - 4, oy + 8); ctx.lineTo(foldX + 4, oy + 8);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = ORANGE; ctx.font = '11px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText(`fold ref -- back tip (${arcHalf.toFixed(1)} mm)`, foldX, oy - H * scale - 14);
+
+  // wall labels
+  ctx.fillStyle = CYAN; ctx.globalAlpha = 0.7; ctx.font = '13px Courier New';
+  ctx.fillText('LEFT WALL', ox + arcHalf / 2 * scale, oy - H / 2 * scale);
+  ctx.fillText('RIGHT WALL', ox + (arcHalf + arcHalf / 2) * scale, oy - H / 2 * scale);
+  ctx.globalAlpha = 1;
+
+  // green opening edges
+  ctx.strokeStyle = GREEN; ctx.lineWidth = 2.8;
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - H * scale); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ox + arcTotal * scale, oy);
+  ctx.lineTo(ox + arcTotal * scale, oy - H * scale); ctx.stroke();
+
+  ctx.fillStyle = GREEN; ctx.font = '10px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText('< opening', ox - 4, oy - H / 2 * scale - 4);
+  ctx.fillText('  edge', ox - 4, oy - H / 2 * scale + 10);
+  ctx.textAlign = 'left';
+  ctx.fillText('opening >', ox + arcTotal * scale + 4, oy - H / 2 * scale - 4);
+  ctx.fillText('edge >', ox + arcTotal * scale + 4, oy - H / 2 * scale + 10);
+
+  // big B watermark
+  ctx.fillStyle = 'rgba(0,212,255,0.10)'; ctx.font = 'bold 50px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('B', ox + arcTotal / 2 * scale, oy - H / 2 * scale + 16);
+
+  // dimensions
+  dimH(ctx, 0, arcTotal, -H * 0.45, `L = ${arcTotal.toFixed(1)} mm (arc length)`, scale, ox, oy);
+  dimH(ctx, 0, arcHalf, -H * 0.15, `${arcHalf.toFixed(1)} mm`, scale, ox, oy);
+  dimV(ctx, 0, H, arcTotal + H * 0.35, `H = ${H.toFixed(0)} mm`, scale, ox, oy);
+
+  // update title
+  document.getElementById('titleB').textContent =
+    `PIECE B -- SIDE WALL STRIP | bend gradually along length | Cut 1x from 1mm PET | ${arcTotal.toFixed(1)} mm x ${H.toFixed(0)} mm`;
+}
+
+// ─── SVG export (true-to-scale 1:1 cutting templates) ───────────────────────
+function generateSVG_A(W, D) {
+  const N = 200;
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const si = -1 + (2 * i) / (N - 1);
+    pts.push([D * (1 - si * si), (W / 2) * si]);
+  }
+  // SVG in mm units for 1:1 printing
+  const margin = 10;
+  const svgW = D + 2 * margin;
+  const svgH = W + 2 * margin;
+  const ox = margin, oy = margin + W / 2;
+
+  let path = `M ${ox},${oy + W / 2} `;
+  for (const [x, y] of pts) path += `L ${ox + x},${oy - y} `;
+  path += `L ${ox},${oy - W / 2} Z`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">
+  <rect width="100%" height="100%" fill="${BG}"/>
+  <path d="${path}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
+  <line x1="${ox}" y1="${oy - W / 2}" x2="${ox}" y2="${oy + W / 2}" stroke="${GREEN}" stroke-width="0.4"/>
+  <text x="${ox + D / 2}" y="${oy}" fill="${CYAN}" font-family="monospace" font-size="5" text-anchor="middle" opacity="0.3">A - TOP FACE</text>
+  <text x="${ox + D / 2}" y="${oy + W / 2 + 6}" fill="${GOLD}" font-family="monospace" font-size="3" text-anchor="middle">D=${D.toFixed(0)}mm  W=${W.toFixed(0)}mm</text>
+</svg>`;
+}
+
+function generateSVG_B(W, D) {
+  const { H, arcTotal } = computeGeometry(W, D);
+  const arcHalf = arcTotal / 2;
+  const margin = 10;
+  const svgW = arcTotal + 2 * margin;
+  const svgH = H + 2 * margin;
+  const ox = margin, oy = margin;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">
+  <rect width="100%" height="100%" fill="${BG}"/>
+  <rect x="${ox}" y="${oy}" width="${arcTotal}" height="${H}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
+  <line x1="${ox}" y1="${oy}" x2="${ox}" y2="${oy + H}" stroke="${GREEN}" stroke-width="0.4"/>
+  <line x1="${ox + arcTotal}" y1="${oy}" x2="${ox + arcTotal}" y2="${oy + H}" stroke="${GREEN}" stroke-width="0.4"/>
+  <line x1="${ox + arcHalf}" y1="${oy}" x2="${ox + arcHalf}" y2="${oy + H}" stroke="${ORANGE}" stroke-width="0.25" stroke-dasharray="2,1.5"/>
+  <text x="${ox + arcTotal / 2}" y="${oy + H / 2 + 2}" fill="${CYAN}" font-family="monospace" font-size="5" text-anchor="middle" opacity="0.3">B - SIDE WALL STRIP</text>
+  <text x="${ox + arcTotal / 2}" y="${oy + H + 7}" fill="${GOLD}" font-family="monospace" font-size="3" text-anchor="middle">L=${arcTotal.toFixed(1)}mm  H=${H.toFixed(0)}mm</text>
+</svg>`;
+}
+
+function downloadSVG(which) {
+  const W = +document.getElementById('widthSlider').value;
+  const D = +document.getElementById('depthSlider').value;
+
+  function dl(content, name) {
+    const blob = new Blob([content], { type: 'image/svg+xml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  if (which === 'A' || which === 'AB') dl(generateSVG_A(W, D), `piece_A_W${W}_D${D}.svg`);
+  if (which === 'B' || which === 'AB') dl(generateSVG_B(W, D), `piece_B_W${W}_D${D}.svg`);
+}
+
+// ─── Redraw everything ──────────────────────────────────────────────────────
+function redraw() {
+  const W = +document.getElementById('widthSlider').value;
+  const D = +document.getElementById('depthSlider').value;
+  const H = W / 2;
+  const { arcTotal } = computeGeometry(W, D);
+
+  document.getElementById('widthVal').textContent = W + ' mm';
+  document.getElementById('depthVal').textContent = D + ' mm';
+  document.getElementById('infoBar').innerHTML =
+    `W = <span>${W}</span> mm &nbsp;|&nbsp; H = <span>${H.toFixed(0)}</span> mm &nbsp;|&nbsp; ` +
+    `D = <span>${D}</span> mm &nbsp;|&nbsp; Arc (strip B) = <span>${arcTotal.toFixed(1)}</span> mm`;
+
+  draw3D(W, D);
+  drawPieceA(W, D);
+  drawPieceB(W, D);
+}
+
+document.getElementById('widthSlider').addEventListener('input', redraw);
+document.getElementById('depthSlider').addEventListener('input', redraw);
+
+redraw();
+</script>
+</body>
+</html>

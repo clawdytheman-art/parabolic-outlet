@@ -2,7 +2,9 @@
 
 > *"Because eyeballing it with scissors wasn't working out."*
 
-A CLI tool that generates a **3D visualization** and **2D flat-cut template** for an aerodynamic air outlet with a parabolic top-view profile. Print the template, cut two pieces from a PET sheet, bend and glue — done.
+A tool that generates a **3D visualization** and **2D flat-cut template** for an aerodynamic air outlet with a parabolic top-view profile. Print the template, cut two pieces from a PET sheet, bend and glue — done.
+
+**[Open the Web App](https://clawdytheman-art.github.io/parabolic-outlet/)** — interactive generator with live preview and SVG export for cutting templates.
 
 ![example template](example.png)
 
@@ -27,7 +29,19 @@ Opening height is always `H = W / 2`.
 
 ---
 
-## Install
+## Web App
+
+No install needed — **[open the web app](https://clawdytheman-art.github.io/parabolic-outlet/)** in any browser.
+
+- Adjust **width** and **depth** with sliders, see results instantly
+- 3D isometric view + full 2D cutting templates (Piece A & B)
+- Download **SVG files** at true 1:1 scale for printing / laser cutting
+
+> To enable GitHub Pages: go to repo **Settings > Pages**, set source to the `main` branch, root folder.
+
+---
+
+## CLI Install
 
 ```bash
 git clone https://github.com/clawdytheman-art/parabolic-outlet
