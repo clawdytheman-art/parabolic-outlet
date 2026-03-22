@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Parabolic Air Outlet Generator</title>
+<title>NACA Flush Air Outlet Generator</title>
 <style>
   :root {
     --bg: #0d0d12;
@@ -14,7 +14,6 @@
     --green: #39ff14;
     --white: #e8e8e8;
     --muted: #888;
-    --dim: #555;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -29,7 +28,6 @@
   }
   h1 {
     font-size: 1.1rem;
-    color: var(--white);
     border: 1px solid var(--cyan);
     background: var(--bg2);
     padding: 8px 20px;
@@ -59,12 +57,12 @@
     font-size: 0.85rem;
   }
   .control-group input[type=range] {
-    width: 140px;
+    width: 130px;
     accent-color: var(--cyan);
   }
   .control-group .val {
     color: var(--cyan);
-    min-width: 60px;
+    min-width: 55px;
     font-size: 0.85rem;
   }
   .info-bar {
@@ -80,7 +78,6 @@
   .panels {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
     gap: 12px;
     max-width: 1100px;
     width: 100%;
@@ -103,9 +100,6 @@
     display: block;
     width: 100%;
     height: auto;
-  }
-  .panel-b {
-    grid-column: 1 / -1;
   }
   .legend {
     display: flex;
@@ -158,7 +152,7 @@
 </head>
 <body>
 
-<h1>PARABOLIC AIR OUTLET GENERATOR</h1>
+<h1>NACA FLUSH AIR OUTLET -- SINGLE PIECE TEMPLATE</h1>
 
 <div class="controls">
   <div class="control-group">
@@ -167,9 +161,14 @@
     <div class="val" id="widthVal">80 mm</div>
   </div>
   <div class="control-group">
+    <label>Height (H):</label>
+    <input type="range" id="heightSlider" min="10" max="120" value="40" step="1">
+    <div class="val" id="heightVal">40 mm</div>
+  </div>
+  <div class="control-group">
     <label>Depth (D):</label>
-    <input type="range" id="depthSlider" min="30" max="250" value="100" step="1">
-    <div class="val" id="depthVal">100 mm</div>
+    <input type="range" id="depthSlider" min="40" max="300" value="120" step="1">
+    <div class="val" id="depthVal">120 mm</div>
   </div>
 </div>
 
@@ -178,483 +177,440 @@
 <div class="panels">
   <div class="panel">
     <div class="panel-title">3D VIEW</div>
-    <canvas id="canvas3d" width="540" height="420"></canvas>
+    <canvas id="canvas3d" width="540" height="440"></canvas>
   </div>
   <div class="panel">
-    <div class="panel-title" id="titleA">PIECE A -- TOP FACE | Cut 1x from 1mm PET</div>
-    <canvas id="canvasA" width="540" height="420"></canvas>
-  </div>
-  <div class="panel panel-b">
-    <div class="panel-title" id="titleB">PIECE B -- SIDE WALL STRIP</div>
-    <canvas id="canvasB" width="1092" height="260"></canvas>
+    <div class="panel-title" id="titleTpl">CUTTING TEMPLATE -- single piece</div>
+    <canvas id="canvasTpl" width="540" height="440"></canvas>
   </div>
 </div>
 
 <div class="legend">
   <div class="legend-item"><div class="legend-swatch" style="background:#00d4ff"></div> cut line</div>
   <div class="legend-item"><div class="legend-swatch" style="background:#39ff14"></div> opening edge</div>
-  <div class="legend-item"><div class="legend-swatch" style="background:#ff6b35"></div> fold reference</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#ff6b35"></div> roof center (fold)</div>
   <div class="legend-item"><div class="legend-swatch" style="background:#ffc72c"></div> dimension</div>
 </div>
 
 <div class="assembly">
-  [1] Cut A and B. &nbsp;
-  [2] Bend strip B at center mark into a U-shape (both walls, one piece). &nbsp;
-  [3] Attach B top edge to curved edges of A (solvent cement or tape). &nbsp;
-  [4] Green edges = opening -- mount flush on surface.
+  [1] Cut the single piece along the outline. &nbsp;
+  [2] Bend into a U-shape: the orange center line becomes the roof ridge. &nbsp;
+  [3] The two straight edges sit flat on the mounting surface. &nbsp;
+  [4] Green edge = elliptical opening (attach to duct or leave open).
 </div>
 
 <div class="btn-row">
-  <button class="btn" onclick="downloadSVG('A')">Download Piece A (SVG)</button>
-  <button class="btn" onclick="downloadSVG('B')">Download Piece B (SVG)</button>
-  <button class="btn" onclick="downloadSVG('AB')">Download Both (SVG)</button>
+  <button class="btn" onclick="downloadSVG()">Download Template (SVG)</button>
 </div>
 
 <script>
-// ─── Colours ────────────────────────────────────────────────────────────────
 const BG = '#0d0d12', CYAN = '#00d4ff', GOLD = '#ffc72c',
       ORANGE = '#ff6b35', GREEN = '#39ff14', WHITE = '#e8e8e8';
 
 // ─── Geometry ───────────────────────────────────────────────────────────────
-function computeGeometry(W, D, N = 400) {
-  const H = W / 2;
-  const s = [], xp = [], yp = [];
-  for (let i = 0; i < N; i++) {
-    const si = -1 + (2 * i) / (N - 1);
-    s.push(si);
-    xp.push(D * (1 - si * si));
-    yp.push((W / 2) * si);
+// Scoop shape: half-ellipse cross-section that tapers parabolically to flush.
+// At position x along length (0 = opening, D = tail):
+//   profile f(x) = 1 - (x/D)²
+//   half-width a(x) = (W/2) * f(x)
+//   height    b(x) = H * f(x)
+//   cross-section = half-ellipse with semi-axes a(x), b(x)
+//
+// Single piece wraps from one ground edge, over the roof, to the other ground edge.
+
+function halfEllipseArc(a, b, t1, t2, steps) {
+  // Arc length of ellipse from angle t1 to t2
+  let len = 0;
+  const dt = (t2 - t1) / steps;
+  for (let i = 1; i <= steps; i++) {
+    const t0 = t1 + (i - 1) * dt;
+    const t = t1 + i * dt;
+    const dx = (-a * Math.sin(t)) - (-a * Math.sin(t0));
+    const dy = (b * Math.cos(t)) - (b * Math.cos(t0));
+    len += Math.sqrt(dx * dx + dy * dy);
   }
-  // arc length via trapezoidal rule on ds
-  let arcTotal = 0;
-  const ds = 2 / (N - 1);
-  for (let i = 1; i < N; i++) {
-    const dx = xp[i] - xp[i - 1];
-    const dy = yp[i] - yp[i - 1];
-    arcTotal += Math.sqrt(dx * dx + dy * dy);
-  }
-  return { H, s, xp, yp, arcTotal };
+  return len;
+}
+
+function computeScoop(W, H, D) {
+  // Full half-ellipse perimeter (t=0 to t=π): this is P₀
+  const STEPS = 200;
+  const P0 = halfEllipseArc(W / 2, H, 0, Math.PI, STEPS);
+
+  // Profile function
+  function f(x) { return 1 - (x / D) * (x / D); }
+
+  // Perimeter at position x scales linearly with f(x)
+  function perimAt(x) { return P0 * f(x); }
+
+  // Half-perimeter (to roof center) = P(x)/2 by symmetry
+  return { P0, f, perimAt };
 }
 
 // ─── Drawing helpers ────────────────────────────────────────────────────────
-function dimH(ctx, x1, x2, y, label, scale, ox, oy) {
-  const sx1 = ox + x1 * scale, sx2 = ox + x2 * scale, sy = oy - y * scale;
+function dimH(ctx, sx1, sx2, sy, label) {
   ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(sx1, sy); ctx.lineTo(sx2, sy); ctx.stroke();
-  // arrows
+  ctx.fillStyle = GOLD;
   for (const [px, dir] of [[sx1, 1], [sx2, -1]]) {
     ctx.beginPath();
-    ctx.moveTo(px, sy);
-    ctx.lineTo(px + dir * 6, sy - 3);
-    ctx.lineTo(px + dir * 6, sy + 3);
-    ctx.fill();
+    ctx.moveTo(px, sy); ctx.lineTo(px + dir * 6, sy - 3); ctx.lineTo(px + dir * 6, sy + 3);
+    ctx.closePath(); ctx.fill();
   }
-  ctx.fillStyle = GOLD; ctx.font = '11px Courier New'; ctx.textAlign = 'center';
+  ctx.font = '10px Courier New'; ctx.textAlign = 'center';
   ctx.fillText(label, (sx1 + sx2) / 2, sy - 6);
 }
 
-function dimV(ctx, y1, y2, x, label, scale, ox, oy) {
-  const sx = ox + x * scale, sy1 = oy - y1 * scale, sy2 = oy - y2 * scale;
+function dimV(ctx, sx, sy1, sy2, label) {
   ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(sx, sy1); ctx.lineTo(sx, sy2); ctx.stroke();
-  for (const [py, dir] of [[sy1, 1], [sy2, -1]]) {
+  ctx.fillStyle = GOLD;
+  for (const [py, dir] of [[sy1, -1], [sy2, 1]]) {
     ctx.beginPath();
-    ctx.moveTo(sx, py);
-    ctx.lineTo(sx - 3, py + dir * 6);
-    ctx.lineTo(sx + 3, py + dir * 6);
-    ctx.fill();
+    ctx.moveTo(sx, py); ctx.lineTo(sx - 3, py + dir * 6); ctx.lineTo(sx + 3, py + dir * 6);
+    ctx.closePath(); ctx.fill();
   }
   ctx.save();
   ctx.translate(sx + 14, (sy1 + sy2) / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = GOLD; ctx.font = '11px Courier New'; ctx.textAlign = 'center';
+  ctx.font = '10px Courier New'; ctx.textAlign = 'center';
   ctx.fillText(label, 0, 0);
   ctx.restore();
 }
 
-// ─── 3D isometric view ──────────────────────────────────────────────────────
-function draw3D(W, D) {
+// ─── 3D View ────────────────────────────────────────────────────────────────
+function draw3D(W, H, D) {
   const c = document.getElementById('canvas3d');
   const ctx = c.getContext('2d');
   const cw = c.width, ch = c.height;
   ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
 
-  const H = W / 2;
   const maxDim = Math.max(W, D, H);
-  const sc = Math.min(cw, ch) * 0.32 / maxDim;
+  const sc = Math.min(cw, ch) * 0.30 / maxDim;
 
-  // match Python matplotlib view_init(elev=24, azim=-52)
-  const azim = -52 * Math.PI / 180;
-  const elev = 24 * Math.PI / 180;
-  const cx0 = cw * 0.48, cy0 = ch * 0.55;
+  const azim = -48 * Math.PI / 180;
+  const elev = 22 * Math.PI / 180;
+  const cx0 = cw * 0.48, cy0 = ch * 0.62;
 
   function proj(x, y, z) {
-    // rotate around Z by azimuth, then project with elevation
     const xr =  x * Math.cos(azim) + y * Math.sin(azim);
     const yr = -x * Math.sin(azim) + y * Math.cos(azim);
-    const px = cx0 + yr * sc;
-    const py = cy0 - (xr * Math.sin(elev) + z * Math.cos(elev)) * sc;
-    return [px, py];
+    return [cx0 + yr * sc, cy0 - (xr * Math.sin(elev) + z * Math.cos(elev)) * sc];
   }
 
-  const N = 120;
-  const s = [];
-  for (let i = 0; i < N; i++) s.push(-1 + (2 * i) / (N - 1));
-  const xp = s.map(si => D * (1 - si * si));
-  const yp = s.map(si => (W / 2) * si);
+  function f(x) { return Math.max(0, 1 - (x / D) * (x / D)); }
 
-  // --- draw back-to-front for correct layering ---
+  const NX = 60;  // steps along length
+  const NT = 40;  // steps around half-ellipse
 
-  // bottom parabola edge (dashed, behind everything)
-  ctx.strokeStyle = CYAN; ctx.setLineDash([4, 4]);
-  ctx.lineWidth = 0.8; ctx.globalAlpha = 0.25;
+  // --- Ground plane outline (parabolic footprint) ---
+  ctx.strokeStyle = CYAN; ctx.setLineDash([3, 3]);
+  ctx.lineWidth = 0.6; ctx.globalAlpha = 0.2;
   ctx.beginPath();
-  for (let i = 0; i < N; i++) {
-    const [px, py] = proj(xp[i], yp[i], 0);
+  for (let i = 0; i <= NX; i++) {
+    const x = (i / NX) * D;
+    const hw = (W / 2) * f(x);
+    const [px, py] = proj(x, -hw, 0);
     i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
-  ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
-
-  // bottom front edge (dashed)
-  ctx.strokeStyle = CYAN; ctx.setLineDash([4, 4]);
-  ctx.lineWidth = 0.8; ctx.globalAlpha = 0.25;
-  ctx.beginPath();
-  let [bfl, bflt] = proj(0, -W/2, 0);
-  let [bfr, bfrt] = proj(0, W/2, 0);
-  ctx.moveTo(bfl, bflt); ctx.lineTo(bfr, bfrt); ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
-
-  // side wall surface (translucent curtain from z=0 to z=H along parabola)
-  ctx.fillStyle = 'rgba(0,212,255,0.07)';
-  ctx.beginPath();
-  for (let i = 0; i < N; i++) {
-    const [px, py] = proj(xp[i], yp[i], 0);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  for (let i = NX; i >= 0; i--) {
+    const x = (i / NX) * D;
+    const hw = (W / 2) * f(x);
+    const [px, py] = proj(x, hw, 0);
+    ctx.lineTo(px, py);
   }
-  for (let i = N - 1; i >= 0; i--) {
-    const [px, py] = proj(xp[i], yp[i], H);
+  ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // --- Surface mesh (translucent) ---
+  // Draw strips along length
+  ctx.fillStyle = 'rgba(0,212,255,0.06)';
+  ctx.strokeStyle = 'rgba(0,212,255,0.08)';
+  ctx.lineWidth = 0.5;
+  for (let j = 0; j < NT; j++) {
+    const t1 = (j / NT) * Math.PI;
+    const t2 = ((j + 1) / NT) * Math.PI;
+    ctx.beginPath();
+    for (let i = 0; i <= NX; i++) {
+      const x = (i / NX) * D;
+      const fx = f(x);
+      const a = (W / 2) * fx, b = H * fx;
+      const [px, py] = proj(x, -a * Math.cos(t1), b * Math.sin(t1));
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    for (let i = NX; i >= 0; i--) {
+      const x = (i / NX) * D;
+      const fx = f(x);
+      const a = (W / 2) * fx, b = H * fx;
+      const [px, py] = proj(x, -a * Math.cos(t2), b * Math.sin(t2));
+      ctx.lineTo(px, py);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+
+  // --- Cross-section rings at a few positions ---
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 0.6; ctx.globalAlpha = 0.3;
+  for (const frac of [0.25, 0.5, 0.75]) {
+    const x = frac * D;
+    const fx = f(x);
+    const a = (W / 2) * fx, b = H * fx;
+    ctx.beginPath();
+    for (let j = 0; j <= NT; j++) {
+      const t = (j / NT) * Math.PI;
+      const [px, py] = proj(x, -a * Math.cos(t), b * Math.sin(t));
+      j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // --- Opening edge (half-ellipse at x=0, green) ---
+  ctx.strokeStyle = GREEN; ctx.lineWidth = 2.5;
+  ctx.fillStyle = 'rgba(68,136,255,0.15)';
+  ctx.beginPath();
+  const [gx1, gy1] = proj(0, W / 2, 0);
+  ctx.moveTo(gx1, gy1);
+  for (let j = 0; j <= NT; j++) {
+    const t = (j / NT) * Math.PI;
+    const [px, py] = proj(0, -(W / 2) * Math.cos(t), H * Math.sin(t));
     ctx.lineTo(px, py);
   }
   ctx.closePath(); ctx.fill();
-
-  // top face surface
-  ctx.fillStyle = 'rgba(0,212,255,0.14)';
-  ctx.beginPath();
-  // parabola at z=H
-  for (let i = 0; i < N; i++) {
-    const [px, py] = proj(xp[i], yp[i], H);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  }
-  // close along front opening edge at z=H
-  const [fe1x, fe1y] = proj(0, W/2, H);
-  ctx.lineTo(fe1x, fe1y);
-  const [fe2x, fe2y] = proj(0, -W/2, H);
-  ctx.lineTo(fe2x, fe2y);
-  ctx.closePath(); ctx.fill();
-
-  // front opening face (rectangle at x=0)
-  ctx.fillStyle = 'rgba(68,136,255,0.18)';
-  ctx.beginPath();
-  const fCorners = [[0,-W/2,0],[0,W/2,0],[0,W/2,H],[0,-W/2,H]];
-  fCorners.forEach((pt, i) => {
-    const [px, py] = proj(...pt);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  });
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 1.2; ctx.stroke();
-
-  // top parabola edge (solid)
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  for (let i = 0; i < N; i++) {
-    const [px, py] = proj(xp[i], yp[i], H);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  }
   ctx.stroke();
 
-  // front opening top edge
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+  // --- Roof ridge line (top of each cross-section, t=π/2) ---
+  ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.8;
+  ctx.setLineDash([5, 3]);
   ctx.beginPath();
-  const [t1x, t1y] = proj(0, -W/2, H);
-  const [t2x, t2y] = proj(0, W/2, H);
-  ctx.moveTo(t1x, t1y); ctx.lineTo(t2x, t2y); ctx.stroke();
-
-  // vertical edges at front corners
-  ctx.lineWidth = 1.5;
-  for (const yw of [-W/2, W/2]) {
-    ctx.beginPath();
-    const [ax, ay] = proj(0, yw, 0);
-    const [bx, by] = proj(0, yw, H);
-    ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  for (let i = 0; i <= NX; i++) {
+    const x = (i / NX) * D;
+    const fx = f(x);
+    const [px, py] = proj(x, 0, H * fx);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
-
-  // back vertical edge (tip of parabola)
-  ctx.lineWidth = 1.2; ctx.globalAlpha = 0.5;
-  ctx.beginPath();
-  const [v1x, v1y] = proj(D, 0, 0);
-  const [v2x, v2y] = proj(D, 0, H);
-  ctx.moveTo(v1x, v1y); ctx.lineTo(v2x, v2y); ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  // dimension labels
-  ctx.fillStyle = GOLD; ctx.font = '12px Courier New';
-  ctx.textAlign = 'left';
-  const lwP = proj(D * 0.35, W / 2 + 12, H + 3);
-  ctx.fillText(`W=${W.toFixed(0)}mm`, lwP[0], lwP[1]);
-  const lhP = proj(D + 6, 3, H / 2);
-  ctx.fillText(`H=${H.toFixed(0)}mm`, lhP[0], lhP[1]);
-  ctx.textAlign = 'right';
-  const ldP = proj(D * 0.55, -W / 2 - 12, -3);
-  ctx.fillText(`D=${D.toFixed(0)}mm`, ldP[0], ldP[1]);
-}
-
-// ─── Piece A (top face) ─────────────────────────────────────────────────────
-function drawPieceA(W, D) {
-  const c = document.getElementById('canvasA');
-  const ctx = c.getContext('2d');
-  const cw = c.width, ch = c.height;
-  ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
-
-  const margin = 50;
-  const scale = Math.min((cw - 2 * margin) / (D + 40), (ch - 2 * margin) / (W + 40));
-  const ox = margin;
-  const oy = ch / 2 + (0) * scale;
-
-  const N = 200;
-  // build outline: closing line at x=0 + parabola
-  const pts = [];
-  // parabola from s=-1 to s=1
-  for (let i = 0; i < N; i++) {
-    const si = -1 + (2 * i) / (N - 1);
-    pts.push([D * (1 - si * si), (W / 2) * si]);
-  }
-
-  // grid lines
-  ctx.strokeStyle = WHITE; ctx.globalAlpha = 0.06; ctx.lineWidth = 0.5;
-  for (let xg = 10; xg < D; xg += 10) {
-    const yMax = (W / 2) * Math.sqrt(Math.max(0, 1 - xg / D));
-    ctx.beginPath();
-    ctx.moveTo(ox + xg * scale, oy - (-yMax) * scale);
-    ctx.lineTo(ox + xg * scale, oy - yMax * scale);
-    ctx.stroke();
-  }
-  for (let yg = -W / 2 + 10; yg < W / 2; yg += 10) {
-    const xEdge = D * (1 - Math.pow(yg / (W / 2), 2));
-    ctx.beginPath();
-    ctx.moveTo(ox, oy - yg * scale);
-    ctx.lineTo(ox + xEdge * scale, oy - yg * scale);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-
-  // fill
-  ctx.fillStyle = 'rgba(0,212,255,0.10)';
-  ctx.beginPath();
-  ctx.moveTo(ox, oy - (-W / 2) * scale);
-  for (const [x, y] of pts) {
-    ctx.lineTo(ox + x * scale, oy - y * scale);
-  }
-  ctx.lineTo(ox, oy - (W / 2) * scale);
-  ctx.closePath(); ctx.fill();
-
-  // outline
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ox, oy - (-W / 2) * scale);
-  for (const [x, y] of pts) {
-    ctx.lineTo(ox + x * scale, oy - y * scale);
-  }
-  ctx.lineTo(ox, oy - (W / 2) * scale);
-  ctx.closePath(); ctx.stroke();
-
-  // opening edge (green)
-  ctx.strokeStyle = GREEN; ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(ox, oy - (-W / 2) * scale);
-  ctx.lineTo(ox, oy - (W / 2) * scale);
-  ctx.stroke();
-
-  // labels
-  ctx.fillStyle = 'rgba(0,212,255,0.15)'; ctx.font = 'bold 36px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('A', ox + D * 0.42 * scale, oy + 12);
-  ctx.fillStyle = '#777'; ctx.font = 'italic 11px Courier New';
-  ctx.fillText('TOP FACE', ox + D * 0.20 * scale, oy - 2);
-  ctx.fillStyle = '#555'; ctx.font = '10px Courier New';
-  ctx.fillText('flat -- no bending', ox + D * 0.20 * scale, oy + 14);
-
-  ctx.fillStyle = GREEN; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
-  ctx.fillText('opening', ox - 6, oy - 4);
-  ctx.fillText('edge', ox - 6, oy + 10);
-
-  // dimensions
-  dimH(ctx, 0, D, -W / 2 - 14, `D = ${D.toFixed(0)} mm`, scale, ox, oy);
-  dimV(ctx, -W / 2, W / 2, D + 16, `W = ${W.toFixed(0)} mm`, scale, ox, oy);
-}
-
-// ─── Piece B (side wall strip) ──────────────────────────────────────────────
-function drawPieceB(W, D) {
-  const c = document.getElementById('canvasB');
-  const ctx = c.getContext('2d');
-  const cw = c.width, ch = c.height;
-  ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
-
-  const { H, arcTotal } = computeGeometry(W, D);
-  const arcHalf = arcTotal / 2;
-
-  const margin = 50;
-  const scale = Math.min((cw - 2 * margin) / (arcTotal * 1.15), (ch - 2 * margin) / (H * 2));
-  const ox = margin + arcTotal * 0.05 * scale;
-  const oy = ch / 2 + H / 2 * scale + 10;
-
-  // rectangle fill
-  ctx.fillStyle = 'rgba(0,212,255,0.08)';
-  ctx.fillRect(ox, oy - H * scale, arcTotal * scale, H * scale);
-
-  // rectangle outline
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
-  ctx.strokeRect(ox, oy - H * scale, arcTotal * scale, H * scale);
-
-  // fold reference (dashed orange)
-  const foldX = ox + arcHalf * scale;
-  ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]);
-  ctx.beginPath();
-  ctx.moveTo(foldX, oy); ctx.lineTo(foldX, oy - H * scale);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // fold arrows
-  ctx.fillStyle = ORANGE;
-  // top arrow (down)
-  ctx.beginPath(); ctx.moveTo(foldX, oy - H * scale);
-  ctx.lineTo(foldX - 4, oy - H * scale - 8); ctx.lineTo(foldX + 4, oy - H * scale - 8);
-  ctx.closePath(); ctx.fill();
-  // bottom arrow (up)
-  ctx.beginPath(); ctx.moveTo(foldX, oy);
-  ctx.lineTo(foldX - 4, oy + 8); ctx.lineTo(foldX + 4, oy + 8);
-  ctx.closePath(); ctx.fill();
+  // --- Ground contact edges (t=0 and t=π, z=0) ---
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 1.5;
+  for (const sign of [-1, 1]) {
+    ctx.beginPath();
+    for (let i = 0; i <= NX; i++) {
+      const x = (i / NX) * D;
+      const hw = (W / 2) * f(x);
+      const [px, py] = proj(x, sign * hw, 0);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
 
-  ctx.fillStyle = ORANGE; ctx.font = '11px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText(`fold ref -- back tip (${arcHalf.toFixed(1)} mm)`, foldX, oy - H * scale - 14);
-
-  // wall labels
-  ctx.fillStyle = CYAN; ctx.globalAlpha = 0.7; ctx.font = '13px Courier New';
-  ctx.fillText('LEFT WALL', ox + arcHalf / 2 * scale, oy - H / 2 * scale);
-  ctx.fillText('RIGHT WALL', ox + (arcHalf + arcHalf / 2) * scale, oy - H / 2 * scale);
-  ctx.globalAlpha = 1;
-
-  // green opening edges
-  ctx.strokeStyle = GREEN; ctx.lineWidth = 2.8;
-  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - H * scale); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(ox + arcTotal * scale, oy);
-  ctx.lineTo(ox + arcTotal * scale, oy - H * scale); ctx.stroke();
-
-  ctx.fillStyle = GREEN; ctx.font = '10px Courier New';
-  ctx.textAlign = 'right';
-  ctx.fillText('< opening', ox - 4, oy - H / 2 * scale - 4);
-  ctx.fillText('  edge', ox - 4, oy - H / 2 * scale + 10);
+  // --- Dimension labels ---
+  ctx.fillStyle = GOLD; ctx.font = '12px Courier New';
   ctx.textAlign = 'left';
-  ctx.fillText('opening >', ox + arcTotal * scale + 4, oy - H / 2 * scale - 4);
-  ctx.fillText('edge >', ox + arcTotal * scale + 4, oy - H / 2 * scale + 10);
-
-  // big B watermark
-  ctx.fillStyle = 'rgba(0,212,255,0.10)'; ctx.font = 'bold 50px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('B', ox + arcTotal / 2 * scale, oy - H / 2 * scale + 16);
-
-  // dimensions
-  dimH(ctx, 0, arcTotal, -H * 0.45, `L = ${arcTotal.toFixed(1)} mm (arc length)`, scale, ox, oy);
-  dimH(ctx, 0, arcHalf, -H * 0.15, `${arcHalf.toFixed(1)} mm`, scale, ox, oy);
-  dimV(ctx, 0, H, arcTotal + H * 0.35, `H = ${H.toFixed(0)} mm`, scale, ox, oy);
-
-  // update title
-  document.getElementById('titleB').textContent =
-    `PIECE B -- SIDE WALL STRIP | bend gradually along length | Cut 1x from 1mm PET | ${arcTotal.toFixed(1)} mm x ${H.toFixed(0)} mm`;
+  const lwP = proj(-3, W / 2 + 8, H * 0.5);
+  ctx.fillText(`W=${W}mm`, lwP[0], lwP[1]);
+  const lhP = proj(-5, -3, H + 5);
+  ctx.fillText(`H=${H}mm`, lhP[0], lhP[1]);
+  ctx.textAlign = 'right';
+  const ldP = proj(D * 0.6, -W / 2 - 10, 0);
+  ctx.fillText(`D=${D}mm`, ldP[0], ldP[1]);
 }
 
-// ─── SVG export (true-to-scale 1:1 cutting templates) ───────────────────────
-function generateSVG_A(W, D) {
-  const N = 200;
-  const pts = [];
-  for (let i = 0; i < N; i++) {
-    const si = -1 + (2 * i) / (N - 1);
-    pts.push([D * (1 - si * si), (W / 2) * si]);
+// ─── Cutting template (developed surface, single piece) ────────────────────
+function drawTemplate(W, H, D) {
+  const c = document.getElementById('canvasTpl');
+  const ctx = c.getContext('2d');
+  const cw = c.width, ch = c.height;
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
+
+  const { P0, f, perimAt } = computeScoop(W, H, D);
+
+  // Template coordinates:
+  //   u = x (along length, 0..D)
+  //   v = arc length around perimeter (0..P(x))
+  // Bottom edge: v=0 for all x
+  // Top edge: v=P(x) = P0 * f(x)
+  // Roof center line: v=P(x)/2
+
+  const margin = 55;
+  const scaleX = (cw - 2 * margin) / D;
+  const scaleY = (ch - 2 * margin) / (P0 * 1.05);
+  const scale = Math.min(scaleX, scaleY);
+
+  const ox = margin;
+  const oy = ch - margin;
+
+  // Number of x-steps for outline
+  const NX = 200;
+
+  // Compute top edge points
+  const topEdge = [];
+  for (let i = 0; i <= NX; i++) {
+    const x = (i / NX) * D;
+    const p = perimAt(x);
+    topEdge.push([x, p]);
   }
-  // SVG in mm units for 1:1 printing
+
+  // Fill
+  ctx.fillStyle = 'rgba(0,212,255,0.08)';
+  ctx.beginPath();
+  ctx.moveTo(ox, oy);
+  for (const [x, p] of topEdge) {
+    ctx.lineTo(ox + x * scale, oy - p * scale);
+  }
+  ctx.lineTo(ox + D * scale, oy);
+  ctx.closePath(); ctx.fill();
+
+  // Cut outline
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy);
+  for (const [x, p] of topEdge) {
+    ctx.lineTo(ox + x * scale, oy - p * scale);
+  }
+  ctx.lineTo(ox + D * scale, oy);
+  ctx.closePath(); ctx.stroke();
+
+  // Bottom edge (ground contact line 1)
+  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy); ctx.lineTo(ox + D * scale, oy);
+  ctx.stroke();
+
+  // Opening edge (green, left side at x=0)
+  ctx.strokeStyle = GREEN; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy);
+  ctx.lineTo(ox, oy - P0 * scale);
+  ctx.stroke();
+
+  // Roof center fold line (orange dashed)
+  ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.8;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  for (let i = 0; i <= NX; i++) {
+    const x = (i / NX) * D;
+    const halfP = perimAt(x) / 2;
+    const sx = ox + x * scale;
+    const sy = oy - halfP * scale;
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Roof center label
+  ctx.fillStyle = ORANGE; ctx.font = '10px Courier New'; ctx.textAlign = 'left';
+  const roofLabelX = ox + D * 0.15 * scale;
+  const roofLabelY = oy - (P0 / 2) * 0.85 * scale;
+  ctx.fillText('roof ridge (fold here)', roofLabelX, roofLabelY);
+
+  // Ground edge labels
+  ctx.fillStyle = '#666'; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('ground contact edge', ox + D * 0.3 * scale, oy + 14);
+
+  // Opening label
+  ctx.fillStyle = GREEN; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
+  ctx.fillText('opening', ox - 5, oy - P0 / 2 * scale);
+  ctx.fillText('(half-ellipse)', ox - 5, oy - P0 / 2 * scale + 13);
+
+  // Tail label
+  ctx.fillStyle = '#555'; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('flush tail', ox + D * scale, oy - 8);
+
+  // Watermark
+  ctx.fillStyle = 'rgba(0,212,255,0.08)'; ctx.font = 'bold 40px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('CUT', ox + D * 0.35 * scale, oy - P0 * 0.25 * scale);
+
+  // Dimensions
+  dimH(ctx, ox, ox + D * scale, oy + 28, `D = ${D} mm`);
+  dimV(ctx, ox - 20, oy, oy - P0 * scale, `P = ${P0.toFixed(1)} mm (arc)`);
+
+  // Half-perimeter dimension
+  const halfPScreen = oy - (P0 / 2) * scale;
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 0.7; ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.moveTo(ox - 8, halfPScreen);
+  ctx.lineTo(ox + 20, halfPScreen);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = GOLD; ctx.font = '9px Courier New'; ctx.textAlign = 'left';
+  ctx.fillText(`P/2 = ${(P0 / 2).toFixed(1)}`, ox + 2, halfPScreen - 4);
+
+  // Update title
+  document.getElementById('titleTpl').textContent =
+    `CUTTING TEMPLATE | 1 piece | ${D} x ${P0.toFixed(1)} mm | 1mm PET/acrylic`;
+}
+
+// ─── SVG export (1:1 scale in mm) ──────────────────────────────────────────
+function generateSVG(W, H, D) {
+  const { P0, f, perimAt } = computeScoop(W, H, D);
   const margin = 10;
   const svgW = D + 2 * margin;
-  const svgH = W + 2 * margin;
-  const ox = margin, oy = margin + W / 2;
+  const svgH = P0 + 2 * margin;
+  const ox = margin, oy = margin + P0;
 
-  let path = `M ${ox},${oy + W / 2} `;
-  for (const [x, y] of pts) path += `L ${ox + x},${oy - y} `;
-  path += `L ${ox},${oy - W / 2} Z`;
+  const NX = 300;
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">
-  <rect width="100%" height="100%" fill="${BG}"/>
-  <path d="${path}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
-  <line x1="${ox}" y1="${oy - W / 2}" x2="${ox}" y2="${oy + W / 2}" stroke="${GREEN}" stroke-width="0.4"/>
-  <text x="${ox + D / 2}" y="${oy}" fill="${CYAN}" font-family="monospace" font-size="5" text-anchor="middle" opacity="0.3">A - TOP FACE</text>
-  <text x="${ox + D / 2}" y="${oy + W / 2 + 6}" fill="${GOLD}" font-family="monospace" font-size="3" text-anchor="middle">D=${D.toFixed(0)}mm  W=${W.toFixed(0)}mm</text>
-</svg>`;
-}
+  // Top edge path
+  let topPath = `M ${ox},${oy} `;
+  for (let i = 0; i <= NX; i++) {
+    const x = (i / NX) * D;
+    const p = perimAt(x);
+    topPath += `L ${(ox + x).toFixed(3)},${(oy - p).toFixed(3)} `;
+  }
+  topPath += `L ${ox + D},${oy} Z`;
 
-function generateSVG_B(W, D) {
-  const { H, arcTotal } = computeGeometry(W, D);
-  const arcHalf = arcTotal / 2;
-  const margin = 10;
-  const svgW = arcTotal + 2 * margin;
-  const svgH = H + 2 * margin;
-  const ox = margin, oy = margin;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">
-  <rect width="100%" height="100%" fill="${BG}"/>
-  <rect x="${ox}" y="${oy}" width="${arcTotal}" height="${H}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
-  <line x1="${ox}" y1="${oy}" x2="${ox}" y2="${oy + H}" stroke="${GREEN}" stroke-width="0.4"/>
-  <line x1="${ox + arcTotal}" y1="${oy}" x2="${ox + arcTotal}" y2="${oy + H}" stroke="${GREEN}" stroke-width="0.4"/>
-  <line x1="${ox + arcHalf}" y1="${oy}" x2="${ox + arcHalf}" y2="${oy + H}" stroke="${ORANGE}" stroke-width="0.25" stroke-dasharray="2,1.5"/>
-  <text x="${ox + arcTotal / 2}" y="${oy + H / 2 + 2}" fill="${CYAN}" font-family="monospace" font-size="5" text-anchor="middle" opacity="0.3">B - SIDE WALL STRIP</text>
-  <text x="${ox + arcTotal / 2}" y="${oy + H + 7}" fill="${GOLD}" font-family="monospace" font-size="3" text-anchor="middle">L=${arcTotal.toFixed(1)}mm  H=${H.toFixed(0)}mm</text>
-</svg>`;
-}
-
-function downloadSVG(which) {
-  const W = +document.getElementById('widthSlider').value;
-  const D = +document.getElementById('depthSlider').value;
-
-  function dl(content, name) {
-    const blob = new Blob([content], { type: 'image/svg+xml' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  // Roof center fold line
+  let foldPath = `M ${ox},${(oy - P0 / 2).toFixed(3)} `;
+  for (let i = 1; i <= NX; i++) {
+    const x = (i / NX) * D;
+    const halfP = perimAt(x) / 2;
+    foldPath += `L ${(ox + x).toFixed(3)},${(oy - halfP).toFixed(3)} `;
   }
 
-  if (which === 'A' || which === 'AB') dl(generateSVG_A(W, D), `piece_A_W${W}_D${D}.svg`);
-  if (which === 'B' || which === 'AB') dl(generateSVG_B(W, D), `piece_B_W${W}_D${D}.svg`);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgW.toFixed(1)}mm" height="${svgH.toFixed(1)}mm" viewBox="0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}">
+  <rect width="100%" height="100%" fill="${BG}"/>
+  <path d="${topPath}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
+  <line x1="${ox}" y1="${oy}" x2="${ox}" y2="${(oy - P0).toFixed(3)}" stroke="${GREEN}" stroke-width="0.4"/>
+  <path d="${foldPath}" fill="none" stroke="${ORANGE}" stroke-width="0.2" stroke-dasharray="2,1.5"/>
+  <text x="${ox + D / 2}" y="${oy - P0 * 0.3}" fill="${CYAN}" font-family="monospace" font-size="4" text-anchor="middle" opacity="0.25">NACA OUTLET - SINGLE PIECE</text>
+  <text x="${ox + D / 2}" y="${oy + 5}" fill="${GOLD}" font-family="monospace" font-size="2.5" text-anchor="middle">W=${W}mm H=${H}mm D=${D}mm P=${P0.toFixed(1)}mm</text>
+</svg>`;
 }
 
-// ─── Redraw everything ──────────────────────────────────────────────────────
+function downloadSVG() {
+  const W = +document.getElementById('widthSlider').value;
+  const H = +document.getElementById('heightSlider').value;
+  const D = +document.getElementById('depthSlider').value;
+  const content = generateSVG(W, H, D);
+  const blob = new Blob([content], { type: 'image/svg+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `naca_outlet_W${W}_H${H}_D${D}.svg`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ─── Redraw ─────────────────────────────────────────────────────────────────
 function redraw() {
   const W = +document.getElementById('widthSlider').value;
+  const H = +document.getElementById('heightSlider').value;
   const D = +document.getElementById('depthSlider').value;
-  const H = W / 2;
-  const { arcTotal } = computeGeometry(W, D);
+  const { P0 } = computeScoop(W, H, D);
 
   document.getElementById('widthVal').textContent = W + ' mm';
+  document.getElementById('heightVal').textContent = H + ' mm';
   document.getElementById('depthVal').textContent = D + ' mm';
   document.getElementById('infoBar').innerHTML =
-    `W = <span>${W}</span> mm &nbsp;|&nbsp; H = <span>${H.toFixed(0)}</span> mm &nbsp;|&nbsp; ` +
-    `D = <span>${D}</span> mm &nbsp;|&nbsp; Arc (strip B) = <span>${arcTotal.toFixed(1)}</span> mm`;
+    `W = <span>${W}</span> mm &nbsp;|&nbsp; H = <span>${H}</span> mm &nbsp;|&nbsp; ` +
+    `D = <span>${D}</span> mm &nbsp;|&nbsp; Half-perimeter = <span>${P0.toFixed(1)}</span> mm`;
 
-  draw3D(W, D);
-  drawPieceA(W, D);
-  drawPieceB(W, D);
+  draw3D(W, H, D);
+  drawTemplate(W, H, D);
 }
 
 document.getElementById('widthSlider').addEventListener('input', redraw);
+document.getElementById('heightSlider').addEventListener('input', redraw);
 document.getElementById('depthSlider').addEventListener('input', redraw);
 
 redraw();
