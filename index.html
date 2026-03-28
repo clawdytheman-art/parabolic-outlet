@@ -437,103 +437,103 @@ function drawTemplate(W, H, D) {
   const scale = Math.min(scaleX, scaleY);
 
   const ox = margin;
-  const oy = ch - margin;
+  // Center the template vertically: fold line is the horizontal center
+  const oCenterY = ch / 2;
 
   // Number of x-steps for outline
   const NX = 200;
 
-  // Compute top edge points
-  const topEdge = [];
+  // Compute edge points (symmetric about fold line)
+  const topEdge = [];   // +P(x)/2 above center
+  const botEdge = [];   // -P(x)/2 below center
   for (let i = 0; i <= NX; i++) {
     const x = (i / NX) * D;
-    const p = perimAt(x);
-    topEdge.push([x, p]);
+    const halfP = perimAt(x) / 2;
+    topEdge.push([x, halfP]);
+    botEdge.push([x, halfP]);
   }
 
   // Fill
   ctx.fillStyle = 'rgba(0,212,255,0.08)';
   ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  for (const [x, p] of topEdge) {
-    ctx.lineTo(ox + x * scale, oy - p * scale);
+  for (let i = 0; i <= NX; i++) {
+    const sx = ox + topEdge[i][0] * scale;
+    const sy = oCenterY - topEdge[i][1] * scale;
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
   }
-  ctx.lineTo(ox + D * scale, oy);
+  for (let i = NX; i >= 0; i--) {
+    const sx = ox + botEdge[i][0] * scale;
+    const sy = oCenterY + botEdge[i][1] * scale;
+    ctx.lineTo(sx, sy);
+  }
   ctx.closePath(); ctx.fill();
 
   // Cut outline
   ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  for (const [x, p] of topEdge) {
-    ctx.lineTo(ox + x * scale, oy - p * scale);
+  for (let i = 0; i <= NX; i++) {
+    const sx = ox + topEdge[i][0] * scale;
+    const sy = oCenterY - topEdge[i][1] * scale;
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
   }
-  ctx.lineTo(ox + D * scale, oy);
+  for (let i = NX; i >= 0; i--) {
+    const sx = ox + botEdge[i][0] * scale;
+    const sy = oCenterY + botEdge[i][1] * scale;
+    ctx.lineTo(sx, sy);
+  }
   ctx.closePath(); ctx.stroke();
-
-  // Bottom edge (ground contact line 1)
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ox, oy); ctx.lineTo(ox + D * scale, oy);
-  ctx.stroke();
 
   // Opening edge (green, left side at x=0)
   ctx.strokeStyle = GREEN; ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  ctx.lineTo(ox, oy - P0 * scale);
+  ctx.moveTo(ox, oCenterY - P0 / 2 * scale);
+  ctx.lineTo(ox, oCenterY + P0 / 2 * scale);
   ctx.stroke();
 
-  // Roof center fold line (orange dashed)
+  // Roof center fold line (orange dashed, horizontal through center)
   ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.8;
   ctx.setLineDash([6, 4]);
   ctx.beginPath();
-  for (let i = 0; i <= NX; i++) {
-    const x = (i / NX) * D;
-    const halfP = perimAt(x) / 2;
-    const sx = ox + x * scale;
-    const sy = oy - halfP * scale;
-    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
-  }
+  ctx.moveTo(ox, oCenterY);
+  ctx.lineTo(ox + D * scale, oCenterY);
   ctx.stroke();
   ctx.setLineDash([]);
 
   // Roof center label
   ctx.fillStyle = ORANGE; ctx.font = '10px Courier New'; ctx.textAlign = 'left';
-  const roofLabelX = ox + D * 0.15 * scale;
-  const roofLabelY = oy - (P0 / 2) * 0.85 * scale;
-  ctx.fillText('roof ridge (fold here)', roofLabelX, roofLabelY);
+  ctx.fillText('roof ridge (fold here)', ox + D * 0.15 * scale, oCenterY - 6);
 
   // Ground edge labels
   ctx.fillStyle = '#666'; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('ground contact edge', ox + D * 0.3 * scale, oy + 14);
+  ctx.fillText('ground contact edge', ox + D * 0.3 * scale, oCenterY + P0 / 2 * scale + 14);
+  ctx.fillText('ground contact edge', ox + D * 0.3 * scale, oCenterY - P0 / 2 * scale - 8);
 
   // Opening label
   ctx.fillStyle = GREEN; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
-  ctx.fillText('opening', ox - 5, oy - P0 / 2 * scale);
-  ctx.fillText('(half-ellipse)', ox - 5, oy - P0 / 2 * scale + 13);
+  ctx.fillText('opening', ox - 5, oCenterY - 5);
+  ctx.fillText('(half-ellipse)', ox - 5, oCenterY + 10);
 
   // Tail label
   ctx.fillStyle = '#555'; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('flush tail', ox + D * scale, oy - 8);
+  ctx.fillText('flush tail', ox + D * scale, oCenterY - 8);
 
   // Watermark
   ctx.fillStyle = 'rgba(0,212,255,0.08)'; ctx.font = 'bold 40px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('CUT', ox + D * 0.35 * scale, oy - P0 * 0.25 * scale);
+  ctx.fillText('CUT', ox + D * 0.35 * scale, oCenterY + 12);
 
   // Dimensions
-  dimH(ctx, ox, ox + D * scale, oy + 28, `D = ${D} mm`);
-  dimV(ctx, ox - 20, oy, oy - P0 * scale, `P = ${P0.toFixed(1)} mm (arc)`);
+  dimH(ctx, ox, ox + D * scale, oCenterY + P0 / 2 * scale + 28, `D = ${D} mm`);
+  dimV(ctx, ox - 20, oCenterY + P0 / 2 * scale, oCenterY - P0 / 2 * scale, `P = ${P0.toFixed(1)} mm (arc)`);
 
   // Half-perimeter dimension
-  const halfPScreen = oy - (P0 / 2) * scale;
   ctx.strokeStyle = GOLD; ctx.lineWidth = 0.7; ctx.setLineDash([2, 2]);
   ctx.beginPath();
-  ctx.moveTo(ox - 8, halfPScreen);
-  ctx.lineTo(ox + 20, halfPScreen);
+  ctx.moveTo(ox - 8, oCenterY);
+  ctx.lineTo(ox + 20, oCenterY);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = GOLD; ctx.font = '9px Courier New'; ctx.textAlign = 'left';
-  ctx.fillText(`P/2 = ${(P0 / 2).toFixed(1)}`, ox + 2, halfPScreen - 4);
+  ctx.fillText(`P/2 = ${(P0 / 2).toFixed(1)}`, ox + 2, oCenterY - P0 / 4 * scale);
 
   // Update title
   document.getElementById('titleTpl').textContent =
@@ -546,35 +546,39 @@ function generateSVG(W, H, D) {
   const margin = 10;
   const svgW = D + 2 * margin;
   const svgH = P0 + 2 * margin;
-  const ox = margin, oy = margin + P0;
+  const ox = margin;
+  // Center vertically: fold line at svgH/2
+  const cy = svgH / 2;
 
   const NX = 300;
 
-  // Top edge path
-  let topPath = `M ${ox},${oy} `;
+  // Outline path (symmetric about center)
+  // Top edge (above center), then bottom edge (below center, reversed)
+  let outlinePath = '';
   for (let i = 0; i <= NX; i++) {
     const x = (i / NX) * D;
-    const p = perimAt(x);
-    topPath += `L ${(ox + x).toFixed(3)},${(oy - p).toFixed(3)} `;
+    const halfP = perimAt(x) / 2;
+    const cmd = i === 0 ? 'M' : 'L';
+    outlinePath += `${cmd} ${(ox + x).toFixed(3)},${(cy - halfP).toFixed(3)} `;
   }
-  topPath += `L ${ox + D},${oy} Z`;
-
-  // Roof center fold line
-  let foldPath = `M ${ox},${(oy - P0 / 2).toFixed(3)} `;
-  for (let i = 1; i <= NX; i++) {
+  for (let i = NX; i >= 0; i--) {
     const x = (i / NX) * D;
     const halfP = perimAt(x) / 2;
-    foldPath += `L ${(ox + x).toFixed(3)},${(oy - halfP).toFixed(3)} `;
+    outlinePath += `L ${(ox + x).toFixed(3)},${(cy + halfP).toFixed(3)} `;
   }
+  outlinePath += 'Z';
+
+  // Roof center fold line (horizontal)
+  const foldPath = `M ${ox},${cy.toFixed(3)} L ${(ox + D).toFixed(3)},${cy.toFixed(3)}`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${svgW.toFixed(1)}mm" height="${svgH.toFixed(1)}mm" viewBox="0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}">
   <rect width="100%" height="100%" fill="${BG}"/>
-  <path d="${topPath}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
-  <line x1="${ox}" y1="${oy}" x2="${ox}" y2="${(oy - P0).toFixed(3)}" stroke="${GREEN}" stroke-width="0.4"/>
+  <path d="${outlinePath}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
+  <line x1="${ox}" y1="${(cy - P0 / 2).toFixed(3)}" x2="${ox}" y2="${(cy + P0 / 2).toFixed(3)}" stroke="${GREEN}" stroke-width="0.4"/>
   <path d="${foldPath}" fill="none" stroke="${ORANGE}" stroke-width="0.2" stroke-dasharray="2,1.5"/>
-  <text x="${ox + D / 2}" y="${oy - P0 * 0.3}" fill="${CYAN}" font-family="monospace" font-size="4" text-anchor="middle" opacity="0.25">NACA OUTLET - SINGLE PIECE</text>
-  <text x="${ox + D / 2}" y="${oy + 5}" fill="${GOLD}" font-family="monospace" font-size="2.5" text-anchor="middle">W=${W}mm H=${H}mm D=${D}mm P=${P0.toFixed(1)}mm</text>
+  <text x="${ox + D / 2}" y="${(cy - 2).toFixed(3)}" fill="${CYAN}" font-family="monospace" font-size="4" text-anchor="middle" opacity="0.25">NACA OUTLET - SINGLE PIECE</text>
+  <text x="${ox + D / 2}" y="${(cy + P0 / 2 + 5).toFixed(3)}" fill="${GOLD}" font-family="monospace" font-size="2.5" text-anchor="middle">W=${W}mm H=${H}mm D=${D}mm P=${P0.toFixed(1)}mm</text>
 </svg>`;
 }
 
