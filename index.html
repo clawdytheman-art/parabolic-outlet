@@ -193,10 +193,10 @@
 </div>
 
 <div class="assembly">
-  [1] Cut the single piece along the outline. &nbsp;
-  [2] Bend into a U-shape: the orange center line becomes the roof ridge. &nbsp;
+  [1] Cut along the outer arc and two straight edges. &nbsp;
+  [2] Fold along the orange line — both halves are mirror images, the fold becomes the roof ridge. &nbsp;
   [3] The two straight edges sit flat on the mounting surface. &nbsp;
-  [4] Green edge = elliptical opening (attach to duct or leave open).
+  [4] Green arc = elliptical opening (attach to duct or leave open).
 </div>
 
 <div class="btn-row">
@@ -218,32 +218,60 @@ const BG = '#0d0d12', CYAN = '#00d4ff', GOLD = '#ffc72c',
 // Single piece wraps from one ground edge, over the roof, to the other ground edge.
 
 function halfEllipseArc(a, b, t1, t2, steps) {
-  // Arc length of ellipse from angle t1 to t2
   let len = 0;
   const dt = (t2 - t1) / steps;
   for (let i = 1; i <= steps; i++) {
     const t0 = t1 + (i - 1) * dt;
-    const t = t1 + i * dt;
+    const t  = t1 + i * dt;
     const dx = (-a * Math.sin(t)) - (-a * Math.sin(t0));
-    const dy = (b * Math.cos(t)) - (b * Math.cos(t0));
+    const dy = (b  * Math.cos(t)) - (b  * Math.cos(t0));
     len += Math.sqrt(dx * dx + dy * dy);
   }
   return len;
 }
 
-function computeScoop(W, H, D) {
-  // Full half-ellipse perimeter (t=0 to t=π): this is P₀
-  const STEPS = 200;
-  const P0 = halfEllipseArc(W / 2, H, 0, Math.PI, STEPS);
+// Cone development: model the surface as a generalized cone with vertex at
+// the tail (D,0,0) and base = half-ellipse opening at x=0.
+// A cone is exactly developable → flat sector with straight fold line.
+function computeConeDevelopment(W, H, D) {
+  const NT = 400;          // steps over t ∈ [0, π]
+  const a  = W / 2, b = H;
 
-  // Profile function
-  function f(x) { return 1 - (x / D) * (x / D); }
+  // Slant distance from tail V=(D,0,0) to arch point at angle t
+  function rSlant(t) {
+    const ct = Math.cos(t), st = Math.sin(t);
+    return Math.sqrt(D*D + a*a*ct*ct + b*b*st*st);
+  }
 
-  // Perimeter at position x scales linearly with f(x)
-  function perimAt(x) { return P0 * f(x); }
+  const rs     = new Float64Array(NT + 1);
+  const thetas = new Float64Array(NT + 1);
+  for (let i = 0; i <= NT; i++) rs[i] = rSlant(i * Math.PI / NT);
 
-  // Half-perimeter (to roof center) = P(x)/2 by symmetry
-  return { P0, f, perimAt };
+  // Integrate arc length on the unit sphere → cumulative flat angle
+  thetas[0] = 0;
+  for (let i = 0; i < NT; i++) {
+    const t1 = i * Math.PI / NT, t2 = (i + 1) * Math.PI / NT;
+    const r1 = rs[i], r2 = rs[i + 1];
+    const n1 = [-D/r1, -a*Math.cos(t1)/r1,  b*Math.sin(t1)/r1];
+    const n2 = [-D/r2, -a*Math.cos(t2)/r2,  b*Math.sin(t2)/r2];
+    thetas[i+1] = thetas[i] + Math.sqrt(
+      (n2[0]-n1[0])**2 + (n2[1]-n1[1])**2 + (n2[2]-n1[2])**2
+    );
+  }
+
+  const totalAngle = thetas[NT];
+  const midIdx     = NT / 2;   // t = π/2  (roof ridge / fold line)
+
+  // 2D flat coords (math, y-up): fold line points straight up; sector symmetric
+  function flat2D(i) {
+    const angle = Math.PI/2 - totalAngle/2 + thetas[i];
+    return [rs[i] * Math.cos(angle), rs[i] * Math.sin(angle)];
+  }
+
+  return { NT, rs, thetas, totalAngle, midIdx,
+           rGround: rs[0],       // slant to opening ground corner  √(D²+(W/2)²)
+           rFold:   rs[midIdx],  // slant to opening top            √(D²+H²)
+           flat2D };
 }
 
 // ─── Drawing helpers ────────────────────────────────────────────────────────
@@ -415,166 +443,159 @@ function draw3D(W, H, D) {
   ctx.fillText(`D=${D}mm`, ldP[0], ldP[1]);
 }
 
-// ─── Cutting template (developed surface, single piece) ────────────────────
+// ─── Cutting template — cone development (single piece, symmetric sector) ──
 function drawTemplate(W, H, D) {
-  const c = document.getElementById('canvasTpl');
+  const c   = document.getElementById('canvasTpl');
   const ctx = c.getContext('2d');
-  const cw = c.width, ch = c.height;
+  const cw  = c.width, ch = c.height;
   ctx.fillStyle = BG; ctx.fillRect(0, 0, cw, ch);
 
-  const { P0, f, perimAt } = computeScoop(W, H, D);
+  const dev = computeConeDevelopment(W, H, D);
+  const { NT, rs, totalAngle, rGround, rFold, flat2D, midIdx } = dev;
+  const P0 = halfEllipseArc(W / 2, H, 0, Math.PI, 200);
 
-  // Template coordinates:
-  //   u = x (along length, 0..D)
-  //   v = arc length around perimeter (0..P(x))
-  // Bottom edge: v=0 for all x
-  // Top edge: v=P(x) = P0 * f(x)
-  // Roof center line: v=P(x)/2
+  const margin = 52;
 
-  const margin = 55;
-  const scaleX = (cw - 2 * margin) / D;
-  const scaleY = (ch - 2 * margin) / (P0 * 1.05);
-  const scale = Math.min(scaleX, scaleY);
+  // Bounding box in math coords (y-up, sector symmetric about y-axis):
+  //   x ∈ [-rGround·sin(totalAngle/2),  rGround·sin(totalAngle/2)]
+  //   y ∈ [0,  max(rFold, rGround·cos(totalAngle/2))]
+  const halfSpan  = rGround * Math.sin(totalAngle / 2);
+  const topHeight = Math.max(rFold, rGround * Math.cos(totalAngle / 2));
 
-  const ox = margin;
-  const oy = ch - margin;
+  const scaleX = (cw - 2 * margin) / (2 * halfSpan);
+  const scaleY = (ch - 2 * margin) / topHeight;
+  const sc     = Math.min(scaleX, scaleY);
 
-  // Number of x-steps for outline
-  const NX = 200;
+  // Vertex (tail) at bottom-center
+  const vx = cw / 2;
+  const vy = ch - margin;
 
-  // Compute top edge points
-  const topEdge = [];
-  for (let i = 0; i <= NX; i++) {
-    const x = (i / NX) * D;
-    const p = perimAt(x);
-    topEdge.push([x, p]);
+  function toSc(i) {
+    const [mx, my] = flat2D(i);
+    return [vx + mx * sc, vy - my * sc];
   }
 
-  // Fill
-  ctx.fillStyle = 'rgba(0,212,255,0.08)';
+  const V        = [vx, vy];
+  const foldTip  = toSc(midIdx);
+  const arcStart = toSc(0);
+  const arcEnd   = toSc(NT);
+
+  // --- Fill ---
+  ctx.fillStyle = 'rgba(0,212,255,0.07)';
   ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  for (const [x, p] of topEdge) {
-    ctx.lineTo(ox + x * scale, oy - p * scale);
-  }
-  ctx.lineTo(ox + D * scale, oy);
+  ctx.moveTo(...V);
+  for (let i = 0; i <= NT; i++) ctx.lineTo(...toSc(i));
   ctx.closePath(); ctx.fill();
 
-  // Cut outline
+  // --- Ground edges (straight radii, cyan) ---
   ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  for (const [x, p] of topEdge) {
-    ctx.lineTo(ox + x * scale, oy - p * scale);
-  }
-  ctx.lineTo(ox + D * scale, oy);
-  ctx.closePath(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(...V); ctx.lineTo(...arcStart); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(...V); ctx.lineTo(...arcEnd);   ctx.stroke();
 
-  // Bottom edge (ground contact line 1)
-  ctx.strokeStyle = CYAN; ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ox, oy); ctx.lineTo(ox + D * scale, oy);
-  ctx.stroke();
-
-  // Opening edge (green, left side at x=0)
+  // --- Opening arch (green) ---
   ctx.strokeStyle = GREEN; ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  ctx.lineTo(ox, oy - P0 * scale);
+  ctx.moveTo(...arcStart);
+  for (let i = 1; i <= NT; i++) ctx.lineTo(...toSc(i));
   ctx.stroke();
 
-  // Roof center fold line (orange dashed)
+  // --- Fold line: straight, bisects sector exactly (orange dashed) ---
   ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.8;
   ctx.setLineDash([6, 4]);
-  ctx.beginPath();
-  for (let i = 0; i <= NX; i++) {
-    const x = (i / NX) * D;
-    const halfP = perimAt(x) / 2;
-    const sx = ox + x * scale;
-    const sy = oy - halfP * scale;
-    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
-  }
-  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(...V); ctx.lineTo(...foldTip); ctx.stroke();
   ctx.setLineDash([]);
 
-  // Roof center label
-  ctx.fillStyle = ORANGE; ctx.font = '10px Courier New'; ctx.textAlign = 'left';
-  const roofLabelX = ox + D * 0.15 * scale;
-  const roofLabelY = oy - (P0 / 2) * 0.85 * scale;
-  ctx.fillText('roof ridge (fold here)', roofLabelX, roofLabelY);
+  // --- Labels ---
+  ctx.fillStyle = ORANGE; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText('roof ridge (fold here)', foldTip[0], foldTip[1] - 12);
 
-  // Ground edge labels
-  ctx.fillStyle = '#666'; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('ground contact edge', ox + D * 0.3 * scale, oy + 14);
+  ctx.fillStyle = GREEN; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText(`opening arch   P = ${P0.toFixed(1)} mm`, foldTip[0], foldTip[1] - 24);
 
-  // Opening label
-  ctx.fillStyle = GREEN; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
-  ctx.fillText('opening', ox - 5, oy - P0 / 2 * scale);
-  ctx.fillText('(half-ellipse)', ox - 5, oy - P0 / 2 * scale + 13);
+  ctx.fillStyle = '#555'; ctx.font = '8px Courier New';
+  // Ground edge labels — offset perpendicular to each radius
+  const angle0 = Math.atan2(arcStart[1] - V[1], arcStart[0] - V[0]);
+  const angleN = Math.atan2(arcEnd[1]   - V[1], arcEnd[0]   - V[0]);
+  const lx0 = (V[0] + arcStart[0]) / 2 + 10 * Math.sin(angle0);
+  const ly0 = (V[1] + arcStart[1]) / 2 - 10 * Math.cos(angle0);
+  const lxN = (V[0] + arcEnd[0])   / 2 - 10 * Math.sin(angleN);
+  const lyN = (V[1] + arcEnd[1])   / 2 + 10 * Math.cos(angleN);
+  ctx.textAlign = 'center';
+  ctx.fillText(`ground  ${rGround.toFixed(1)} mm`, lx0, ly0);
+  ctx.fillText(`ground  ${rGround.toFixed(1)} mm`, lxN, lyN);
 
-  // Tail label
-  ctx.fillStyle = '#555'; ctx.font = '9px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('flush tail', ox + D * scale, oy - 8);
+  ctx.fillStyle = '#555'; ctx.textAlign = 'center';
+  ctx.fillText('tail', V[0], V[1] + 15);
 
   // Watermark
-  ctx.fillStyle = 'rgba(0,212,255,0.08)'; ctx.font = 'bold 40px Courier New'; ctx.textAlign = 'center';
-  ctx.fillText('CUT', ox + D * 0.35 * scale, oy - P0 * 0.25 * scale);
+  ctx.fillStyle = 'rgba(0,212,255,0.06)'; ctx.font = 'bold 38px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('CUT', vx, vy - topHeight * sc * 0.38);
 
-  // Dimensions
-  dimH(ctx, ox, ox + D * scale, oy + 28, `D = ${D} mm`);
-  dimV(ctx, ox - 20, oy, oy - P0 * scale, `P = ${P0.toFixed(1)} mm (arc)`);
+  // Fold-line length dimension
+  dimV(ctx, vx - 24, vy, foldTip[1], `${rFold.toFixed(1)} mm`);
 
-  // Half-perimeter dimension
-  const halfPScreen = oy - (P0 / 2) * scale;
-  ctx.strokeStyle = GOLD; ctx.lineWidth = 0.7; ctx.setLineDash([2, 2]);
-  ctx.beginPath();
-  ctx.moveTo(ox - 8, halfPScreen);
-  ctx.lineTo(ox + 20, halfPScreen);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  // Sector angle note
   ctx.fillStyle = GOLD; ctx.font = '9px Courier New'; ctx.textAlign = 'left';
-  ctx.fillText(`P/2 = ${(P0 / 2).toFixed(1)}`, ox + 2, halfPScreen - 4);
+  ctx.fillText(`sector: ${(totalAngle * 180 / Math.PI).toFixed(1)}°`, margin, ch - 10);
 
-  // Update title
   document.getElementById('titleTpl').textContent =
-    `CUTTING TEMPLATE | 1 piece | ${D} x ${P0.toFixed(1)} mm | 1mm PET/acrylic`;
+    `CUTTING TEMPLATE | 1 piece | arch ${P0.toFixed(1)} mm | slant ${rGround.toFixed(1)} mm | 1mm PET/acrylic`;
 }
 
-// ─── SVG export (1:1 scale in mm) ──────────────────────────────────────────
+// ─── SVG export — cone development, 1:1 mm scale ───────────────────────────
 function generateSVG(W, H, D) {
-  const { P0, f, perimAt } = computeScoop(W, H, D);
-  const margin = 10;
-  const svgW = D + 2 * margin;
-  const svgH = P0 + 2 * margin;
-  const ox = margin, oy = margin + P0;
+  const dev = computeConeDevelopment(W, H, D);
+  const { NT, totalAngle, rGround, rFold, flat2D, midIdx } = dev;
+  const P0 = halfEllipseArc(W / 2, H, 0, Math.PI, 200);
 
-  const NX = 300;
+  // Bounding box in math coords
+  const halfSpan  = rGround * Math.sin(totalAngle / 2);
+  const topHeight = Math.max(rFold, rGround * Math.cos(totalAngle / 2));
 
-  // Top edge path
-  let topPath = `M ${ox},${oy} `;
-  for (let i = 0; i <= NX; i++) {
-    const x = (i / NX) * D;
-    const p = perimAt(x);
-    topPath += `L ${(ox + x).toFixed(3)},${(oy - p).toFixed(3)} `;
+  const margin = 8;
+  const svgW = 2 * halfSpan + 2 * margin;
+  const svgH = topHeight + 2 * margin;
+
+  // Vertex at bottom-center in SVG coords (y down)
+  const vx = svgW / 2;
+  const vy = margin + topHeight;
+
+  function pt(i) {
+    const [mx, my] = flat2D(i);
+    return `${(vx + mx).toFixed(3)},${(vy - my).toFixed(3)}`;
   }
-  topPath += `L ${ox + D},${oy} Z`;
 
-  // Roof center fold line
-  let foldPath = `M ${ox},${(oy - P0 / 2).toFixed(3)} `;
-  for (let i = 1; i <= NX; i++) {
-    const x = (i / NX) * D;
-    const halfP = perimAt(x) / 2;
-    foldPath += `L ${(ox + x).toFixed(3)},${(oy - halfP).toFixed(3)} `;
-  }
+  const V       = `${vx.toFixed(3)},${vy.toFixed(3)}`;
+  const foldPt  = pt(midIdx);
+
+  // Outline: vertex → arch start → arch → arch end → vertex
+  let outline = `M ${V} L ${pt(0)}`;
+  for (let i = 1; i <= NT; i++) outline += ` L ${pt(i)}`;
+  outline += ` Z`;
+
+  // Opening arch only (for green stroke)
+  let arch = `M ${pt(0)}`;
+  for (let i = 1; i <= NT; i++) arch += ` L ${pt(i)}`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${svgW.toFixed(1)}mm" height="${svgH.toFixed(1)}mm" viewBox="0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}">
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="${svgW.toFixed(2)}mm" height="${svgH.toFixed(2)}mm"
+     viewBox="0 0 ${svgW.toFixed(2)} ${svgH.toFixed(2)}">
   <rect width="100%" height="100%" fill="${BG}"/>
-  <path d="${topPath}" fill="none" stroke="${CYAN}" stroke-width="0.3"/>
-  <line x1="${ox}" y1="${oy}" x2="${ox}" y2="${(oy - P0).toFixed(3)}" stroke="${GREEN}" stroke-width="0.4"/>
-  <path d="${foldPath}" fill="none" stroke="${ORANGE}" stroke-width="0.2" stroke-dasharray="2,1.5"/>
-  <text x="${ox + D / 2}" y="${oy - P0 * 0.3}" fill="${CYAN}" font-family="monospace" font-size="4" text-anchor="middle" opacity="0.25">NACA OUTLET - SINGLE PIECE</text>
-  <text x="${ox + D / 2}" y="${oy + 5}" fill="${GOLD}" font-family="monospace" font-size="2.5" text-anchor="middle">W=${W}mm H=${H}mm D=${D}mm P=${P0.toFixed(1)}mm</text>
+  <path d="${outline}" fill="rgba(0,212,255,0.05)" stroke="${CYAN}" stroke-width="0.3"/>
+  <path d="${arch}"    fill="none" stroke="${GREEN}"  stroke-width="0.4"/>
+  <line x1="${V.split(',')[0]}" y1="${V.split(',')[1]}"
+        x2="${foldPt.split(',')[0]}" y2="${foldPt.split(',')[1]}"
+        stroke="${ORANGE}" stroke-width="0.25" stroke-dasharray="2,1.5"/>
+  <text x="${vx.toFixed(2)}" y="${(vy + 5).toFixed(2)}"
+        fill="${WHITE}" font-family="monospace" font-size="3" text-anchor="middle">tail</text>
+  <text x="${vx.toFixed(2)}" y="${(margin + 4).toFixed(2)}"
+        fill="${GREEN}" font-family="monospace" font-size="3" text-anchor="middle"
+        >opening arch  P = ${P0.toFixed(1)} mm</text>
+  <text x="${vx.toFixed(2)}" y="${(vy + 9).toFixed(2)}"
+        fill="${GOLD}" font-family="monospace" font-size="2.5" text-anchor="middle"
+        >W=${W} H=${H} D=${D} mm  |  slant=${rGround.toFixed(1)} mm  |  sector=${(totalAngle*180/Math.PI).toFixed(1)}deg</text>
 </svg>`;
 }
 
@@ -596,14 +617,16 @@ function redraw() {
   const W = +document.getElementById('widthSlider').value;
   const H = +document.getElementById('heightSlider').value;
   const D = +document.getElementById('depthSlider').value;
-  const { P0 } = computeScoop(W, H, D);
+  const P0  = halfEllipseArc(W / 2, H, 0, Math.PI, 200);
+  const dev = computeConeDevelopment(W, H, D);
 
   document.getElementById('widthVal').textContent = W + ' mm';
   document.getElementById('heightVal').textContent = H + ' mm';
   document.getElementById('depthVal').textContent = D + ' mm';
   document.getElementById('infoBar').innerHTML =
     `W = <span>${W}</span> mm &nbsp;|&nbsp; H = <span>${H}</span> mm &nbsp;|&nbsp; ` +
-    `D = <span>${D}</span> mm &nbsp;|&nbsp; Half-perimeter = <span>${P0.toFixed(1)}</span> mm`;
+    `D = <span>${D}</span> mm &nbsp;|&nbsp; Opening arch = <span>${P0.toFixed(1)}</span> mm &nbsp;|&nbsp; ` +
+    `Slant = <span>${dev.rGround.toFixed(1)}</span> mm`;
 
   draw3D(W, H, D);
   drawTemplate(W, H, D);
